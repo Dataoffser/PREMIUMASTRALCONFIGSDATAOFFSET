@@ -1,0 +1,1022 @@
+--[[
+    ╔═══════════════════════════════════════╗
+    ║    ASTRAL CONFIGS PREMIUM - V1.0     ║
+    ║        Made by: Dataoffset           ║
+    ║   Compatible with All Executors      ║
+    ║        Mobile Optimized Edition      ║
+    ╚═══════════════════════════════════════╝
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Camera = workspace.CurrentCamera
+
+local LocalPlayer = Players.LocalPlayer
+local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+-- Update character reference on respawn
+LocalPlayer.CharacterAdded:Connect(function(char)
+    character = char
+    hrp = char:WaitForChild("HumanoidRootPart")
+end)
+
+--------------------------------------------------
+-- SAVED SETTINGS
+--------------------------------------------------
+local Settings = {
+    UIColor = Color3.fromRGB(138, 43, 226), -- Default Purple
+    UITransparency = 0.1,
+    UIScale = 1,
+    AnimationSpeed = 0.3,
+    GlowEnabled = true,
+    RainbowMode = false,
+}
+
+--------------------------------------------------
+-- FEATURE STATES
+--------------------------------------------------
+local FeatureStates = {
+    OrbitAura = false,
+    AutoCollect = false,
+    AutoRespawn = false,
+    FPSBoost = false,
+}
+
+--------------------------------------------------
+-- ORBIT AURA VARIABLES (ORIGINAL UNKILLABLE VERSION)
+--------------------------------------------------
+local VOID_POS = Vector3.new(0, -500, 0)  -- Far below the map for safety
+local HEIGHT_OFFSET = 5
+local ORBIT_RADIUS = 10
+local ORBIT_SPEED = 2
+local orbitConnection = nil
+local orbitAngle = 0
+
+--------------------------------------------------
+-- UTILITY FUNCTIONS
+--------------------------------------------------
+local function createTween(instance, properties, duration)
+    local tweenInfo = TweenInfo.new(duration or Settings.AnimationSpeed, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(instance, tweenInfo, properties)
+    tween:Play()
+    return tween
+end
+
+local function addCorner(parent, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius or 8)
+    corner.Parent = parent
+    return corner
+end
+
+local function addStroke(parent, color, thickness)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color or Settings.UIColor
+    stroke.Thickness = thickness or 2
+    stroke.Parent = parent
+    return stroke
+end
+
+local function addGradient(parent, color1, color2)
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, color1),
+        ColorSequenceKeypoint.new(1, color2)
+    }
+    gradient.Rotation = 90
+    gradient.Parent = parent
+    return gradient
+end
+
+--------------------------------------------------
+-- ORBIT AURA FUNCTIONS (ORIGINAL UNKILLABLE CODE)
+--------------------------------------------------
+local function getClosestEnemy()
+    local closest = nil
+    local shortestDist = math.huge
+    
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= LocalPlayer and v.Character then
+            local enemyHrp = v.Character:FindFirstChild("HumanoidRootPart")
+            local enemyHum = v.Character:FindFirstChild("Humanoid")
+            
+            if enemyHrp and enemyHum and enemyHum.Health > 0 then
+                local dist = (hrp.Position - enemyHrp.Position).Magnitude
+                if dist < shortestDist then
+                    shortestDist = dist
+                    closest = v.Character
+                end
+            end
+        end
+    end
+    
+    return closest
+end
+
+local function teleportToVoid()
+    if hrp then
+        hrp.CFrame = CFrame.new(VOID_POS)
+        hrp.Velocity = Vector3.new(0, 0, 0)
+        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    end
+end
+
+local function setCameraVoid(enemy)
+    if not enemy then return end
+    
+    local ehrp = enemy:FindFirstChild("HumanoidRootPart")
+    if not ehrp then return end
+    
+    -- Create orbit effect
+    orbitAngle = orbitAngle + ORBIT_SPEED
+    local x = math.cos(math.rad(orbitAngle)) * ORBIT_RADIUS
+    local z = math.sin(math.rad(orbitAngle)) * ORBIT_RADIUS
+    local behind = Vector3.new(x, 0, z)
+    
+    local targetPos = ehrp.Position + behind + Vector3.new(0, HEIGHT_OFFSET, 0)
+    Camera.CFrame = CFrame.new(VOID_POS, targetPos)
+end
+
+local function toggleOrbitAura(enabled)
+    FeatureStates.OrbitAura = enabled
+    
+    if enabled then
+        orbitConnection = RunService.Stepped:Connect(function()
+            if character and hrp then
+                teleportToVoid()
+                local enemy = getClosestEnemy()
+                if enemy and enemy:FindFirstChild("HumanoidRootPart") then
+                    setCameraVoid(enemy)
+                end
+            end
+        end)
+    else
+        if orbitConnection then
+            orbitConnection:Disconnect()
+            orbitConnection = nil
+        end
+        if character and hrp then
+            hrp.CFrame = CFrame.new(0, 5, 0)
+            Camera.CameraSubject = character:FindFirstChild("Humanoid")
+        end
+    end
+end
+
+--------------------------------------------------
+-- AUTO COLLECT FUNCTIONS
+--------------------------------------------------
+local collectConnection = nil
+
+local function toggleAutoCollect(enabled)
+    FeatureStates.AutoCollect = enabled
+    
+    if enabled then
+        collectConnection = RunService.RenderStepped:Connect(function()
+            if not character then return end
+            local currentHrp = character:FindFirstChild("HumanoidRootPart")
+            if not currentHrp then return end
+            local humanoid = character:FindFirstChild("Humanoid")
+            local needsHealth = humanoid and humanoid.Health < humanoid.MaxHealth
+            
+            for _, obj in pairs(workspace:GetChildren()) do
+                if obj.Name == "_drop" and obj:IsA("BasePart") then
+                    if (obj:FindFirstChild("Health") and needsHealth) or obj:FindFirstChild("Ammo") then
+                        firetouchinterest(currentHrp, obj, 0)
+                        firetouchinterest(currentHrp, obj, 1)
+                    end
+                end
+            end
+        end)
+    else
+        if collectConnection then
+            collectConnection:Disconnect()
+            collectConnection = nil
+        end
+    end
+end
+
+--------------------------------------------------
+-- AUTO RESPAWN FUNCTIONS
+--------------------------------------------------
+local respawnConnection = nil
+
+local function setupRespawn(char)
+    if not FeatureStates.AutoRespawn then return end
+    
+    local humanoid = char:WaitForChild("Humanoid")
+    humanoid.Died:Connect(function()
+        if not FeatureStates.AutoRespawn then return end
+        task.wait()
+        pcall(function()
+            local respawnRemote = ReplicatedStorage:FindFirstChild("Remotes")
+            if respawnRemote then
+                respawnRemote = respawnRemote:FindFirstChild("Duels")
+                if respawnRemote then
+                    respawnRemote = respawnRemote:FindFirstChild("RespawnNow")
+                    if respawnRemote then
+                        respawnRemote:FireServer()
+                    end
+                end
+            end
+        end)
+    end)
+end
+
+local function toggleAutoRespawn(enabled)
+    FeatureStates.AutoRespawn = enabled
+    
+    if enabled then
+        respawnConnection = LocalPlayer.CharacterAdded:Connect(setupRespawn)
+        if LocalPlayer.Character then
+            setupRespawn(LocalPlayer.Character)
+        end
+    else
+        if respawnConnection then
+            respawnConnection:Disconnect()
+            respawnConnection = nil
+        end
+    end
+end
+
+--------------------------------------------------
+-- FPS BOOSTER FUNCTIONS
+--------------------------------------------------
+local function toggleFPSBoost(enabled)
+    FeatureStates.FPSBoost = enabled
+    
+    if enabled then
+        -- Lighting optimizations
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 9e9
+        Lighting.Brightness = 1
+        
+        for _, effect in pairs(Lighting:GetChildren()) do
+            if effect:IsA("PostEffect") then
+                effect.Enabled = false
+            end
+        end
+        
+        -- Workspace optimizations
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Fire") or obj:IsA("Smoke") then
+                obj.Enabled = false
+            elseif obj:IsA("BasePart") then
+                obj.Material = Enum.Material.Plastic
+                obj.Reflectance = 0
+            elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                obj.Transparency = 1
+            end
+        end
+        
+        pcall(function()
+            settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        end)
+    else
+        -- Restore settings
+        Lighting.GlobalShadows = true
+        Lighting.FogEnd = 100000
+        
+        for _, effect in pairs(Lighting:GetChildren()) do
+            if effect:IsA("PostEffect") then
+                effect.Enabled = true
+            end
+        end
+        
+        pcall(function()
+            settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+        end)
+    end
+end
+
+--------------------------------------------------
+-- GUI CREATION
+--------------------------------------------------
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AstralConfigsPremium"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- Protection for different executors
+if syn then
+    syn.protect_gui(ScreenGui)
+    ScreenGui.Parent = game.CoreGui
+elseif gethui then
+    ScreenGui.Parent = gethui()
+else
+    ScreenGui.Parent = game.CoreGui
+end
+
+-- Toggle Button (Open/Close) - Mobile Friendly
+local ToggleFrame = Instance.new("Frame")
+ToggleFrame.Name = "ToggleFrame"
+ToggleFrame.Size = UDim2.new(0, 70, 0, 70)
+ToggleFrame.Position = UDim2.new(0, 10, 0.5, -35)
+ToggleFrame.BackgroundColor3 = Settings.UIColor
+ToggleFrame.BorderSizePixel = 0
+ToggleFrame.Parent = ScreenGui
+ToggleFrame.Active = true
+addCorner(ToggleFrame, 35)
+addStroke(ToggleFrame, Color3.fromRGB(255, 255, 255), 3)
+
+-- Glow effect for toggle button
+local ToggleGlow = Instance.new("ImageLabel")
+ToggleGlow.Name = "Glow"
+ToggleGlow.BackgroundTransparency = 1
+ToggleGlow.Position = UDim2.new(0, -15, 0, -15)
+ToggleGlow.Size = UDim2.new(1, 30, 1, 30)
+ToggleGlow.ZIndex = 0
+ToggleGlow.Image = "rbxassetid://6015897843"
+ToggleGlow.ImageColor3 = Settings.UIColor
+ToggleGlow.ImageTransparency = 0.3
+ToggleGlow.ScaleType = Enum.ScaleType.Slice
+ToggleGlow.SliceCenter = Rect.new(49, 49, 450, 450)
+ToggleGlow.Parent = ToggleFrame
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Size = UDim2.new(1, 0, 1, 0)
+ToggleButton.BackgroundTransparency = 1
+ToggleButton.Text = "★"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.TextSize = 32
+ToggleButton.Parent = ToggleFrame
+
+-- Make Toggle Button Draggable (Mobile + PC)
+local dragging = false
+local dragInput, mousePos, framePos
+
+ToggleFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        mousePos = input.Position
+        framePos = ToggleFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+ToggleFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - mousePos
+        local newPos = UDim2.new(
+            framePos.X.Scale,
+            framePos.X.Offset + delta.X,
+            framePos.Y.Scale,
+            framePos.Y.Offset + delta.Y
+        )
+        createTween(ToggleFrame, {Position = newPos}, 0.1)
+    end
+end)
+
+-- Main Frame - Mobile Optimized Size
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 450, 0, 600)
+MainFrame.Position = UDim2.new(0.5, -225, 0.5, -300)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+MainFrame.BackgroundTransparency = Settings.UITransparency
+MainFrame.BorderSizePixel = 0
+MainFrame.Visible = false
+MainFrame.Active = true
+MainFrame.Parent = ScreenGui
+addCorner(MainFrame, 15)
+addStroke(MainFrame, Settings.UIColor, 3)
+
+-- Make Main Frame Draggable
+local mainDragging = false
+local mainDragInput, mainMousePos, mainFramePos
+
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        mainDragging = true
+        mainMousePos = input.Position
+        mainFramePos = MainFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                mainDragging = false
+            end
+        end)
+    end
+end)
+
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        mainDragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == mainDragInput and mainDragging then
+        local delta = input.Position - mainMousePos
+        local newPos = UDim2.new(
+            mainFramePos.X.Scale,
+            mainFramePos.X.Offset + delta.X,
+            mainFramePos.Y.Scale,
+            mainFramePos.Y.Offset + delta.Y
+        )
+        createTween(MainFrame, {Position = newPos}, 0.1)
+    end
+end)
+
+-- Shadow Effect
+local Shadow = Instance.new("ImageLabel")
+Shadow.Name = "Shadow"
+Shadow.BackgroundTransparency = 1
+Shadow.Position = UDim2.new(0, -20, 0, -20)
+Shadow.Size = UDim2.new(1, 40, 1, 40)
+Shadow.ZIndex = 0
+Shadow.Image = "rbxassetid://6015897843"
+Shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+Shadow.ImageTransparency = 0.4
+Shadow.ScaleType = Enum.ScaleType.Slice
+Shadow.SliceCenter = Rect.new(49, 49, 450, 450)
+Shadow.Parent = MainFrame
+
+-- Header
+local Header = Instance.new("Frame")
+Header.Name = "Header"
+Header.Size = UDim2.new(1, 0, 0, 70)
+Header.BackgroundColor3 = Settings.UIColor
+Header.BorderSizePixel = 0
+Header.Parent = MainFrame
+addCorner(Header, 15)
+addGradient(Header, Settings.UIColor, Color3.fromRGB(Settings.UIColor.R * 255 * 0.6, Settings.UIColor.G * 255 * 0.6, Settings.UIColor.B * 255 * 0.6))
+
+-- Astral Logo/Icon
+local LogoFrame = Instance.new("Frame")
+LogoFrame.Size = UDim2.new(0, 45, 0, 45)
+LogoFrame.Position = UDim2.new(0, 12, 0, 12.5)
+LogoFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+LogoFrame.BackgroundTransparency = 0.1
+LogoFrame.BorderSizePixel = 0
+LogoFrame.Parent = Header
+addCorner(LogoFrame, 22.5)
+
+local LogoText = Instance.new("TextLabel")
+LogoText.Size = UDim2.new(1, 0, 1, 0)
+LogoText.BackgroundTransparency = 1
+LogoText.Text = "★"
+LogoText.TextColor3 = Settings.UIColor
+LogoText.Font = Enum.Font.GothamBold
+LogoText.TextSize = 28
+LogoText.Parent = LogoFrame
+
+-- Title Container
+local TitleContainer = Instance.new("Frame")
+TitleContainer.Size = UDim2.new(1, -140, 1, 0)
+TitleContainer.Position = UDim2.new(0, 65, 0, 0)
+TitleContainer.BackgroundTransparency = 1
+TitleContainer.Parent = Header
+
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.Position = UDim2.new(0, 0, 0, 12)
+Title.BackgroundTransparency = 1
+Title.Text = "ASTRAL CONFIGS"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 20
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TitleContainer
+
+local Subtitle = Instance.new("TextLabel")
+Subtitle.Name = "Subtitle"
+Subtitle.Size = UDim2.new(1, 0, 0, 18)
+Subtitle.Position = UDim2.new(0, 0, 0, 38)
+Subtitle.BackgroundTransparency = 1
+Subtitle.Text = "PREMIUM EDITION"
+Subtitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+Subtitle.Font = Enum.Font.GothamBold
+Subtitle.TextSize = 12
+Subtitle.TextTransparency = 0.3
+Subtitle.TextXAlignment = Enum.TextXAlignment.Left
+Subtitle.Parent = TitleContainer
+
+local CloseButton = Instance.new("TextButton")
+CloseButton.Name = "CloseButton"
+CloseButton.Size = UDim2.new(0, 40, 0, 40)
+CloseButton.Position = UDim2.new(1, -52, 0, 15)
+CloseButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+CloseButton.Text = "✕"
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.TextSize = 20
+CloseButton.Parent = Header
+addCorner(CloseButton, 10)
+
+-- Tab System - Mobile Optimized
+local TabContainer = Instance.new("Frame")
+TabContainer.Name = "TabContainer"
+TabContainer.Size = UDim2.new(1, -20, 0, 40)
+TabContainer.Position = UDim2.new(0, 10, 0, 80)
+TabContainer.BackgroundTransparency = 1
+TabContainer.Parent = MainFrame
+
+local TabLayout = Instance.new("UIListLayout")
+TabLayout.FillDirection = Enum.FillDirection.Horizontal
+TabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+TabLayout.Padding = UDim.new(0, 8)
+TabLayout.Parent = TabContainer
+
+-- Content Frame
+local ContentFrame = Instance.new("ScrollingFrame")
+ContentFrame.Name = "ContentFrame"
+ContentFrame.Size = UDim2.new(1, -20, 1, -140)
+ContentFrame.Position = UDim2.new(0, 10, 0, 130)
+ContentFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+ContentFrame.BackgroundTransparency = 0.3
+ContentFrame.BorderSizePixel = 0
+ContentFrame.ScrollBarThickness = 6
+ContentFrame.ScrollBarImageColor3 = Settings.UIColor
+ContentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ContentFrame.Parent = MainFrame
+addCorner(ContentFrame, 12)
+
+local ContentLayout = Instance.new("UIListLayout")
+ContentLayout.Padding = UDim.new(0, 15)
+ContentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ContentLayout.Parent = ContentFrame
+
+ContentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    ContentFrame.CanvasSize = UDim2.new(0, 0, 0, ContentLayout.AbsoluteContentSize.Y + 20)
+end)
+
+local ContentPadding = Instance.new("UIPadding")
+ContentPadding.PaddingTop = UDim.new(0, 10)
+ContentPadding.PaddingBottom = UDim.new(0, 10)
+ContentPadding.Parent = ContentFrame
+
+--------------------------------------------------
+-- TAB CREATION FUNCTION
+--------------------------------------------------
+local currentTab = nil
+local tabs = {}
+
+local function createTab(name, icon)
+    local TabButton = Instance.new("TextButton")
+    TabButton.Name = name .. "Tab"
+    TabButton.Size = UDim2.new(0, 105, 0, 35)
+    TabButton.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    TabButton.Text = icon .. " " .. name
+    TabButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+    TabButton.Font = Enum.Font.GothamBold
+    TabButton.TextSize = 12
+    TabButton.Parent = TabContainer
+    addCorner(TabButton, 10)
+    addStroke(TabButton, Color3.fromRGB(50, 50, 55), 1)
+    
+    local TabContent = Instance.new("Frame")
+    TabContent.Name = name .. "Content"
+    TabContent.Size = UDim2.new(1, 0, 1, 0)
+    TabContent.BackgroundTransparency = 1
+    TabContent.Visible = false
+    TabContent.Parent = ContentFrame
+    
+    local TabContentLayout = Instance.new("UIListLayout")
+    TabContentLayout.Padding = UDim.new(0, 15)
+    TabContentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    TabContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    TabContentLayout.Parent = TabContent
+    
+    tabs[name] = {Button = TabButton, Content = TabContent}
+    
+    TabButton.MouseButton1Click:Connect(function()
+        for tabName, tab in pairs(tabs) do
+            tab.Content.Visible = false
+            createTween(tab.Button, {BackgroundColor3 = Color3.fromRGB(30, 30, 35), TextColor3 = Color3.fromRGB(200, 200, 200)})
+        end
+        
+        TabContent.Visible = true
+        currentTab = name
+        createTween(TabButton, {BackgroundColor3 = Settings.UIColor, TextColor3 = Color3.fromRGB(255, 255, 255)})
+    end)
+    
+    return TabContent
+end
+
+--------------------------------------------------
+-- TOGGLE CREATION FUNCTION
+--------------------------------------------------
+local function createToggle(parent, name, description, callback)
+    local ToggleContainer = Instance.new("Frame")
+    ToggleContainer.Name = name .. "Container"
+    ToggleContainer.Size = UDim2.new(0, 410, 0, 70)
+    ToggleContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    ToggleContainer.BorderSizePixel = 0
+    ToggleContainer.Parent = parent
+    addCorner(ToggleContainer, 10)
+    addStroke(ToggleContainer, Color3.fromRGB(50, 50, 55), 1)
+    
+    local ToggleName = Instance.new("TextLabel")
+    ToggleName.Size = UDim2.new(1, -80, 0, 25)
+    ToggleName.Position = UDim2.new(0, 15, 0, 10)
+    ToggleName.BackgroundTransparency = 1
+    ToggleName.Text = name
+    ToggleName.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ToggleName.Font = Enum.Font.GothamBold
+    ToggleName.TextSize = 14
+    ToggleName.TextXAlignment = Enum.TextXAlignment.Left
+    ToggleName.Parent = ToggleContainer
+    
+    local ToggleDesc = Instance.new("TextLabel")
+    ToggleDesc.Size = UDim2.new(1, -80, 0, 20)
+    ToggleDesc.Position = UDim2.new(0, 15, 0, 35)
+    ToggleDesc.BackgroundTransparency = 1
+    ToggleDesc.Text = description
+    ToggleDesc.TextColor3 = Color3.fromRGB(150, 150, 150)
+    ToggleDesc.Font = Enum.Font.Gotham
+    ToggleDesc.TextSize = 11
+    ToggleDesc.TextXAlignment = Enum.TextXAlignment.Left
+    ToggleDesc.Parent = ToggleContainer
+    
+    local ToggleButton = Instance.new("TextButton")
+    ToggleButton.Name = "ToggleButton"
+    ToggleButton.Size = UDim2.new(0, 50, 0, 25)
+    ToggleButton.Position = UDim2.new(1, -65, 0, 22.5)
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+    ToggleButton.Text = ""
+    ToggleButton.Parent = ToggleContainer
+    addCorner(ToggleButton, 12)
+    
+    local ToggleIndicator = Instance.new("Frame")
+    ToggleIndicator.Name = "Indicator"
+    ToggleIndicator.Size = UDim2.new(0, 19, 0, 19)
+    ToggleIndicator.Position = UDim2.new(0, 3, 0, 3)
+    ToggleIndicator.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+    ToggleIndicator.Parent = ToggleButton
+    addCorner(ToggleIndicator, 10)
+    
+    local enabled = false
+    
+    ToggleButton.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        
+        if enabled then
+            createTween(ToggleButton, {BackgroundColor3 = Settings.UIColor})
+            createTween(ToggleIndicator, {Position = UDim2.new(0, 28, 0, 3), BackgroundColor3 = Color3.fromRGB(255, 255, 255)})
+        else
+            createTween(ToggleButton, {BackgroundColor3 = Color3.fromRGB(60, 60, 65)})
+            createTween(ToggleIndicator, {Position = UDim2.new(0, 3, 0, 3), BackgroundColor3 = Color3.fromRGB(200, 200, 200)})
+        end
+        
+        callback(enabled)
+    end)
+    
+    return ToggleContainer
+end
+
+--------------------------------------------------
+-- SLIDER CREATION FUNCTION
+--------------------------------------------------
+local function createSlider(parent, name, min, max, default, callback)
+    local SliderContainer = Instance.new("Frame")
+    SliderContainer.Name = name .. "Container"
+    SliderContainer.Size = UDim2.new(0, 410, 0, 60)
+    SliderContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    SliderContainer.BorderSizePixel = 0
+    SliderContainer.Parent = parent
+    addCorner(SliderContainer, 10)
+    addStroke(SliderContainer, Color3.fromRGB(50, 50, 55), 1)
+    
+    local SliderName = Instance.new("TextLabel")
+    SliderName.Size = UDim2.new(0.7, 0, 0, 25)
+    SliderName.Position = UDim2.new(0, 15, 0, 5)
+    SliderName.BackgroundTransparency = 1
+    SliderName.Text = name
+    SliderName.TextColor3 = Color3.fromRGB(255, 255, 255)
+    SliderName.Font = Enum.Font.GothamBold
+    SliderName.TextSize = 14
+    SliderName.TextXAlignment = Enum.TextXAlignment.Left
+    SliderName.Parent = SliderContainer
+    
+    local SliderValue = Instance.new("TextLabel")
+    SliderValue.Size = UDim2.new(0.3, -15, 0, 25)
+    SliderValue.Position = UDim2.new(0.7, 0, 0, 5)
+    SliderValue.BackgroundTransparency = 1
+    SliderValue.Text = tostring(default)
+    SliderValue.TextColor3 = Settings.UIColor
+    SliderValue.Font = Enum.Font.GothamBold
+    SliderValue.TextSize = 14
+    SliderValue.TextXAlignment = Enum.TextXAlignment.Right
+    SliderValue.Parent = SliderContainer
+    
+    local SliderTrack = Instance.new("Frame")
+    SliderTrack.Size = UDim2.new(1, -30, 0, 6)
+    SliderTrack.Position = UDim2.new(0, 15, 0, 40)
+    SliderTrack.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+    SliderTrack.BorderSizePixel = 0
+    SliderTrack.Parent = SliderContainer
+    addCorner(SliderTrack, 3)
+    
+    local SliderFill = Instance.new("Frame")
+    SliderFill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    SliderFill.BackgroundColor3 = Settings.UIColor
+    SliderFill.BorderSizePixel = 0
+    SliderFill.Parent = SliderTrack
+    addCorner(SliderFill, 3)
+    
+    local SliderButton = Instance.new("TextButton")
+    SliderButton.Size = UDim2.new(0, 16, 0, 16)
+    SliderButton.Position = UDim2.new((default - min) / (max - min), -8, 0, -5)
+    SliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    SliderButton.Text = ""
+    SliderButton.Parent = SliderTrack
+    addCorner(SliderButton, 8)
+    addStroke(SliderButton, Settings.UIColor, 2)
+    
+    local dragging = false
+    
+    SliderButton.MouseButton1Down:Connect(function()
+        dragging = true
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local mousePos = UserInputService:GetMouseLocation().X
+            local trackPos = SliderTrack.AbsolutePosition.X
+            local trackSize = SliderTrack.AbsoluteSize.X
+            local relativePos = math.clamp(mousePos - trackPos, 0, trackSize)
+            local percentage = relativePos / trackSize
+            local value = math.floor(min + (max - min) * percentage)
+            
+            SliderValue.Text = tostring(value)
+            createTween(SliderFill, {Size = UDim2.new(percentage, 0, 1, 0)})
+            createTween(SliderButton, {Position = UDim2.new(percentage, -8, 0, -5)})
+            
+            callback(value)
+        end
+    end)
+    
+    return SliderContainer
+end
+
+--------------------------------------------------
+-- COLOR PICKER CREATION FUNCTION
+--------------------------------------------------
+local function createColorPicker(parent, name, default, callback)
+    local ColorContainer = Instance.new("Frame")
+    ColorContainer.Name = name .. "Container"
+    ColorContainer.Size = UDim2.new(0, 410, 0, 50)
+    ColorContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    ColorContainer.BorderSizePixel = 0
+    ColorContainer.Parent = parent
+    addCorner(ColorContainer, 10)
+    addStroke(ColorContainer, Color3.fromRGB(50, 50, 55), 1)
+    
+    local ColorName = Instance.new("TextLabel")
+    ColorName.Size = UDim2.new(0.7, 0, 1, 0)
+    ColorName.Position = UDim2.new(0, 15, 0, 0)
+    ColorName.BackgroundTransparency = 1
+    ColorName.Text = name
+    ColorName.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ColorName.Font = Enum.Font.GothamBold
+    ColorName.TextSize = 14
+    ColorName.TextXAlignment = Enum.TextXAlignment.Left
+    ColorName.Parent = ColorContainer
+    
+    local ColorDisplay = Instance.new("Frame")
+    ColorDisplay.Size = UDim2.new(0, 100, 0, 30)
+    ColorDisplay.Position = UDim2.new(1, -115, 0.5, -15)
+    ColorDisplay.BackgroundColor3 = default
+    ColorDisplay.BorderSizePixel = 0
+    ColorDisplay.Parent = ColorContainer
+    addCorner(ColorDisplay, 6)
+    addStroke(ColorDisplay, Color3.fromRGB(255, 255, 255), 2)
+    
+    local ColorButton = Instance.new("TextButton")
+    ColorButton.Size = UDim2.new(1, 0, 1, 0)
+    ColorButton.BackgroundTransparency = 1
+    ColorButton.Text = ""
+    ColorButton.Parent = ColorDisplay
+    
+    local currentColor = default
+    
+    ColorButton.MouseButton1Click:Connect(function()
+        -- Simple color cycling for demo
+        local colors = {
+            Color3.fromRGB(138, 43, 226), -- Purple
+            Color3.fromRGB(255, 0, 127), -- Pink
+            Color3.fromRGB(0, 191, 255), -- Blue
+            Color3.fromRGB(0, 255, 127), -- Green
+            Color3.fromRGB(255, 165, 0), -- Orange
+            Color3.fromRGB(255, 0, 0), -- Red
+        }
+        
+        local currentIndex = 1
+        for i, color in ipairs(colors) do
+            if color == currentColor then
+                currentIndex = i
+                break
+            end
+        end
+        
+        currentIndex = currentIndex % #colors + 1
+        currentColor = colors[currentIndex]
+        
+        createTween(ColorDisplay, {BackgroundColor3 = currentColor})
+        callback(currentColor)
+    end)
+    
+    return ColorContainer
+end
+
+--------------------------------------------------
+-- CREATE TABS
+--------------------------------------------------
+local FeaturesTab = createTab("Features", "⚡")
+local AdjustmentTab = createTab("Settings", "⚙️")
+
+-- Set default tab
+tabs["Features"].Content.Visible = true
+createTween(tabs["Features"].Button, {BackgroundColor3 = Settings.UIColor, TextColor3 = Color3.fromRGB(255, 255, 255)})
+
+--------------------------------------------------
+-- FEATURES TAB CONTENT
+--------------------------------------------------
+createToggle(FeaturesTab, "🌀 Orbit Aura", "Unkillable void teleport with orbit", function(enabled)
+    toggleOrbitAura(enabled)
+end)
+
+createToggle(FeaturesTab, "💊 Auto Collect", "Automatically collect health and ammo", function(enabled)
+    toggleAutoCollect(enabled)
+end)
+
+createToggle(FeaturesTab, "🔄 Auto Respawn", "Instantly respawn when you die", function(enabled)
+    toggleAutoRespawn(enabled)
+end)
+
+createToggle(FeaturesTab, "⚡ FPS Booster", "Optimize game performance", function(enabled)
+    toggleFPSBoost(enabled)
+end)
+
+--------------------------------------------------
+-- ADJUSTMENT TAB CONTENT
+--------------------------------------------------
+createColorPicker(AdjustmentTab, "UI Theme Color", Settings.UIColor, function(color)
+    Settings.UIColor = color
+    
+    -- Update all UI elements
+    createTween(Header, {BackgroundColor3 = color})
+    createTween(ToggleFrame, {BackgroundColor3 = color})
+    ToggleGlow.ImageColor3 = color
+    ContentFrame.ScrollBarImageColor3 = color
+    
+    for _, tab in pairs(tabs) do
+        if tab.Content.Visible then
+            createTween(tab.Button, {BackgroundColor3 = color})
+        end
+    end
+    
+    -- Update all toggles and sliders
+    for _, child in pairs(ContentFrame:GetDescendants()) do
+        if child.Name == "ToggleButton" and child:FindFirstChild("Indicator") then
+            local indicator = child.Indicator
+            if indicator.Position == UDim2.new(0, 28, 0, 3) then
+                createTween(child, {BackgroundColor3 = color})
+            end
+        end
+    end
+end)
+
+createSlider(AdjustmentTab, "UI Transparency", 0, 90, Settings.UITransparency * 100, function(value)
+    Settings.UITransparency = value / 100
+    createTween(MainFrame, {BackgroundTransparency = Settings.UITransparency})
+end)
+
+createSlider(AdjustmentTab, "Animation Speed", 1, 10, Settings.AnimationSpeed * 10, function(value)
+    Settings.AnimationSpeed = value / 10
+end)
+
+createToggle(AdjustmentTab, "✨ Glow Effect", "Add glow to UI elements", function(enabled)
+    Settings.GlowEnabled = enabled
+    Shadow.Visible = enabled
+end)
+
+createToggle(AdjustmentTab, "🌈 Rainbow Mode", "Cycle through colors automatically", function(enabled)
+    Settings.RainbowMode = enabled
+    
+    if enabled then
+        spawn(function()
+            local hue = 0
+            while Settings.RainbowMode do
+                hue = (hue + 1) % 360
+                local color = Color3.fromHSV(hue / 360, 1, 1)
+                Settings.UIColor = color
+                
+                createTween(Header, {BackgroundColor3 = color}, 0.1)
+                createTween(ToggleFrame, {BackgroundColor3 = color}, 0.1)
+                ToggleGlow.ImageColor3 = color
+                ContentFrame.ScrollBarImageColor3 = color
+                
+                task.wait(0.05)
+            end
+        end)
+    end
+end)
+
+--------------------------------------------------
+-- TOGGLE MENU FUNCTIONALITY
+--------------------------------------------------
+ToggleButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+    
+    if MainFrame.Visible then
+        MainFrame.Size = UDim2.new(0, 0, 0, 0)
+        createTween(MainFrame, {Size = UDim2.new(0, 450, 0, 600)})
+        createTween(ToggleButton, {Rotation = 360})
+    else
+        createTween(MainFrame, {Size = UDim2.new(0, 0, 0, 0)})
+        createTween(ToggleButton, {Rotation = 0})
+    end
+end)
+
+CloseButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = false
+    createTween(MainFrame, {Size = UDim2.new(0, 0, 0, 0)})
+    createTween(ToggleButton, {Rotation = 0})
+end)
+
+--------------------------------------------------
+-- CHARACTER RESPAWN HANDLER
+--------------------------------------------------
+LocalPlayer.CharacterAdded:Connect(function(char)
+    character = char
+    hrp = char:WaitForChild("HumanoidRootPart")
+    
+    -- Reconnect orbit aura if it was enabled
+    if FeatureStates.OrbitAura then
+        toggleOrbitAura(false)
+        task.wait(0.1)
+        toggleOrbitAura(true)
+    end
+    
+    -- Setup auto respawn
+    if FeatureStates.AutoRespawn then
+        setupRespawn(char)
+    end
+end)
+
+--------------------------------------------------
+-- INITIALIZATION
+--------------------------------------------------
+print("╔═══════════════════════════════════════╗")
+print("║ ASTRAL CONFIGS PREMIUM - LOADED ✓    ║")
+print("║ Version: 1.0 | Made by: Dataoffset   ║")
+print("║ Mobile Optimized | Press ★ to open!  ║")
+print("╚═══════════════════════════════════════╝")
+
+-- Notification
+local function createNotification(text)
+    local NotifFrame = Instance.new("Frame")
+    NotifFrame.Size = UDim2.new(0, 300, 0, 60)
+    NotifFrame.Position = UDim2.new(1, 10, 1, -70)
+    NotifFrame.BackgroundColor3 = Settings.UIColor
+    NotifFrame.BorderSizePixel = 0
+    NotifFrame.Parent = ScreenGui
+    addCorner(NotifFrame, 10)
+    
+    local NotifText = Instance.new("TextLabel")
+    NotifText.Size = UDim2.new(1, -20, 1, 0)
+    NotifText.Position = UDim2.new(0, 10, 0, 0)
+    NotifText.BackgroundTransparency = 1
+    NotifText.Text = text
+    NotifText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    NotifText.Font = Enum.Font.GothamBold
+    NotifText.TextSize = 13
+    NotifText.TextWrapped = true
+    NotifText.Parent = NotifFrame
+    
+    createTween(NotifFrame, {Position = UDim2.new(1, -310, 1, -70)})
+    
+    task.wait(3)
+    createTween(NotifFrame, {Position = UDim2.new(1, 10, 1, -70)})
+    task.wait(0.3)
+    NotifFrame:Destroy()
+end
+
+createNotification("✅ Astral Configs Premium Loaded!\nMade by: Dataoffset")
